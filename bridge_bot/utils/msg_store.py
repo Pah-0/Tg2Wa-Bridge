@@ -114,7 +114,12 @@ async def save_message(
             chat_id=chat_id,
             tg_id=tg_id,
             wa_id=wa_id,
-            raw=msg.SerializeToString() if msg else None,
+            # Already serialized, or a protobuf message.
+            raw=(
+                msg
+                if isinstance(msg, bytes)
+                else (msg.SerializeToString() if msg else None)
+            ),
             raw_user=(jid or bot.client.me.JID).SerializeToString(),
             timestamp=timestamp,
         )
@@ -149,10 +154,22 @@ async def get_message(
                     )
                 )
             )
-            results = (await session.scalars(stmt)).all()
+            results = (await session.scalars(stmt.order_by(message._id))).all()
         return results[0] if results else None
     except Exception as e:
         raise e
+
+
+async def get_messages(gc_id: str, chat_id: int, wa_id: str):
+    """All the bridged parts of a WhatsApp message, in the order sent."""
+    async_session = sessions[gc_id]
+    async with async_session() as session:
+        stmt = (
+            select(Message)
+            .where(and_(Message.chat_id == chat_id, Message.wa_id == wa_id))
+            .order_by(Message._id)
+        )
+        return (await session.scalars(stmt)).all()
 
 
 async def delete_message(

@@ -11,6 +11,7 @@ from bridge_bot.utils.msg_store import (
     delete_message,
     edit_message,
     get_message,
+    get_messages,
     save_message,
 )
 from bridge_bot.utils.msg_utils import (
@@ -22,12 +23,62 @@ from bridge_bot.utils.msg_utils import (
 )
 from bridge_bot.utils.ordering import hold_new_message_turn, hold_target_turn
 from bridge_bot.utils.parse_md import parse as custom_parse
+from bridge_bot.utils.tg_split import TG_CAPTION_MAX, TG_TEXT_MAX, split_tg_text
 from bridge_bot.utils.tg_transfer import upload_file
 
 # A reaction can arrive while its message is still being bridged.
 REACTION_RETRIES = 3
 REACTION_RETRY_DELAY = 5
 retry_tasks = set()
+
+
+async def send_parts(tg_chat_id, text, reply_to=None, file=None, **kwargs):
+    """Sends bridge markdown to TG, split over as many messages as it needs.
+
+    With file, the first part is its caption. Returns the sent messages.
+    """
+    parts = split_tg_text(text, TG_CAPTION_MAX if file is not None else TG_TEXT_MAX)
+    first, entities = parts[0]
+    if file is not None:
+        rep = await bot.tg_client.send_file(
+            tg_chat_id,
+            file,
+            caption=first,
+            formatting_entities=entities,
+            parse_mode=None,
+            reply_to=reply_to,
+            **kwargs,
+        )
+    else:
+        rep = await bot.tg_client.send_message(
+            tg_chat_id,
+            first,
+            formatting_entities=entities,
+            parse_mode=None,
+            reply_to=reply_to,
+        )
+    sent = [rep]
+    for part, entities in parts[1:]:
+        sent.append(
+            await bot.tg_client.send_message(
+                tg_chat_id, part, formatting_entities=entities, parse_mode=None
+            )
+        )
+    return sent
+
+
+async def save_parts(event, tg_chat_id, sent):
+    """Saves every part of a bridged message under its WhatsApp id."""
+    for rep in sent:
+        await save_message(
+            event.chat.id,
+            tg_chat_id,
+            event.from_user.jid,
+            event._message,
+            rep.id,
+            event.id,
+            timestamp=event.timestamp,
+        )
 
 
 async def text_to_tg(event, tg_chat_id, client):
@@ -42,21 +93,8 @@ async def text_to_tg(event, tg_chat_id, client):
             msg = await get_message(
                 chat_id, tg_chat_id, wa_id=event.reply_to_message.id
             )
-        rep = await bot.tg_client.send_message(
-            tg_chat_id,
-            text,
-            reply_to=msg.tg_id if msg else None,
-            parse_mode=custom_parse,
-        )
-        return await save_message(
-            chat_id,
-            tg_chat_id,
-            event.from_user.jid,
-            event._message,
-            rep.id,
-            event.id,
-            timestamp=event.timestamp,
-        )
+        sent = await send_parts(tg_chat_id, text, msg.tg_id if msg else None)
+        return await save_parts(event, tg_chat_id, sent)
     except Exception:
         await logger(Exception)
 
@@ -76,22 +114,8 @@ async def img_to_tg(event, tg_chat_id, client):
             msg = await get_message(
                 chat_id, tg_chat_id, wa_id=event.reply_to_message.id
             )
-        rep = await bot.tg_client.send_file(
-            tg_chat_id,
-            image,
-            caption=text,
-            reply_to=msg.tg_id if msg else None,
-            parse_mode=custom_parse,
-        )
-        return await save_message(
-            chat_id,
-            tg_chat_id,
-            event.from_user.jid,
-            event._message,
-            rep.id,
-            event.id,
-            timestamp=event.timestamp,
-        )
+        sent = await send_parts(tg_chat_id, text, msg.tg_id if msg else None, image)
+        return await save_parts(event, tg_chat_id, sent)
     except Exception:
         await logger(Exception)
 
@@ -118,23 +142,10 @@ async def vid_to_tg(event, tg_chat_id, client):
             )
         thum = await get_video_thumbnail(video_)
         video = await upload_file(bot.tg_client, video) or video
-        rep = await bot.tg_client.send_file(
-            tg_chat_id,
-            video,
-            caption=text,
-            thumb=thum,
-            reply_to=msg.tg_id if msg else None,
-            parse_mode=custom_parse,
+        sent = await send_parts(
+            tg_chat_id, text, msg.tg_id if msg else None, video, thumb=thum
         )
-        return await save_message(
-            chat_id,
-            tg_chat_id,
-            event.from_user.jid,
-            event._message,
-            rep.id,
-            event.id,
-            timestamp=event.timestamp,
-        )
+        return await save_parts(event, tg_chat_id, sent)
     except Exception:
         await logger(Exception)
 
@@ -198,23 +209,14 @@ async def doc_to_tg(event, tg_chat_id, client):
             msg = await get_message(
                 chat_id, tg_chat_id, wa_id=event.reply_to_message.id
             )
-        rep = await bot.tg_client.send_file(
+        sent = await send_parts(
             tg_chat_id,
+            text,
+            msg.tg_id if msg else None,
             document,
-            caption=text,
             force_document=True,
-            reply_to=msg.tg_id if msg else None,
-            parse_mode=custom_parse,
         )
-        return await save_message(
-            chat_id,
-            tg_chat_id,
-            event.from_user.jid,
-            event._message,
-            rep.id,
-            event.id,
-            timestamp=event.timestamp,
-        )
+        return await save_parts(event, tg_chat_id, sent)
     except Exception:
         await logger(Exception)
 
@@ -281,23 +283,25 @@ async def delete_for_tg(event, tg_chat_id, client):
     "Deletes bridged messages when deleted on Whatsapp."
     try:
         chat_id = event.chat.id
-        msg = await get_message(chat_id, tg_chat_id, wa_id=event.revoked_id)
-        if not msg:
+        msgs = await get_messages(chat_id, tg_chat_id, event.revoked_id)
+        if not msgs:
             return
-        msg_id = msg.tg_id
-        status = await delete_message(chat_id, tg_chat_id, msg_id)
-        if not status:
-            await logger(
-                e=f"@wa_to_tg: Failed to delete message from database, msg;\n{msg}",
-                error=True,
-            )
+        for msg in msgs:
+            if not await delete_message(chat_id, tg_chat_id, msg.tg_id):
+                await logger(
+                    e=f"@wa_to_tg: Failed to delete message from database, msg;\n{msg}",
+                    error=True,
+                )
         try:
-            await bot.tg_client.delete_messages(tg_chat_id, msg_id)
+            await bot.tg_client.delete_messages(tg_chat_id, [msg.tg_id for msg in msgs])
         except Exception:
             pass
         # clean reaction messages in database (on both end)
-        await delete_message(chat_id, tg_chat_id, msg_id, is_reaction=True)
-        await delete_message(chat_id, tg_chat_id, wa_id=msg.wa_id, is_reaction=True)
+        for msg in msgs:
+            await delete_message(chat_id, tg_chat_id, msg.tg_id, is_reaction=True)
+        await delete_message(
+            chat_id, tg_chat_id, wa_id=event.revoked_id, is_reaction=True
+        )
     except Exception:
         await logger(Exception)
 
@@ -306,10 +310,9 @@ async def edit_for_tg(event, tg_chat_id, client):
     "Edits bridged messages when edited on Whatsapp."
     try:
         chat_id = event.chat.id
-        msg = await get_message(chat_id, tg_chat_id, wa_id=event.edited_id)
-        if not msg:
+        msgs = await get_messages(chat_id, tg_chat_id, event.edited_id)
+        if not msgs:
             return
-        msg_id = msg.tg_id
         text = event.caption or event.text
         text = await replace_mentions_for_tg(bot.tg_client, text)
         text = await replace_wa_mentions(text, event)
@@ -320,18 +323,47 @@ async def edit_for_tg(event, tg_chat_id, client):
                 e=f"@wa_to_tg: Unknown edit event, event;\n{event.message}", error=True
             )
             return
-        status = await edit_message(chat_id, tg_chat_id, update_data, msg_id)
-        if not status:
-            await logger(
-                e=f"@wa_to_tg: Failed to edit message in database, msg;\n{msg}",
-                error=True,
+        parts = split_tg_text(text, TG_CAPTION_MAX if event.media else TG_TEXT_MAX)
+        # The edit can need more or fewer messages than the original.
+        for msg, (part, entities) in zip(msgs, parts):
+            status = await edit_message(chat_id, tg_chat_id, update_data, msg.tg_id)
+            if not status:
+                await logger(
+                    e=f"@wa_to_tg: Failed to edit message in database, msg;\n{msg}",
+                    error=True,
+                )
+            try:
+                await bot.tg_client.edit_message(
+                    tg_chat_id,
+                    msg.tg_id,
+                    part,
+                    formatting_entities=entities,
+                    parse_mode=None,
+                )
+            except Exception:
+                pass
+        for part, entities in parts[len(msgs) :]:
+            rep = await bot.tg_client.send_message(
+                tg_chat_id, part, formatting_entities=entities, parse_mode=None
             )
-        try:
-            await bot.tg_client.edit_message(
-                tg_chat_id, msg_id, text, parse_mode=custom_parse
+            await save_message(
+                chat_id,
+                tg_chat_id,
+                event.from_user.jid,
+                update_data["raw"],
+                rep.id,
+                event.edited_id,
+                timestamp=msgs[0].timestamp,
             )
-        except Exception:
-            pass
+        if extra := msgs[len(parts) :]:
+            for msg in extra:
+                await delete_message(chat_id, tg_chat_id, msg.tg_id)
+            try:
+                await bot.tg_client.delete_messages(
+                    tg_chat_id, [msg.tg_id for msg in extra]
+                )
+            except Exception:
+                pass
     except Exception:
         await logger(Exception)
 
