@@ -7,7 +7,7 @@ hachoir
 pymongo
 python-decouple
 python-ffmpeg
-sqlalchemy
+sqlalchemy[asyncio]
 telethon
 tgcrypto
 Wand
