@@ -357,7 +357,8 @@ async def lottie_to_tg_video_sticker(animation: dict) -> bytes:
         async with astick_sem:
             process, stdout, stderr = await enshell(cmd)
         if process.returncode != 0:
-            raise RuntimeError(f"stderr: {stderr} Return code: {process.returncode}")
+            raise RuntimeError(f"stderr: {stderr} Return code: {
+                    process.returncode}")
         # Frame names aren't always zero-padded.
         pngs = sorted(
             (f for f in listdir(folder) if f.endswith(".png")),
@@ -424,7 +425,8 @@ async def _frames_to_tg_video_sticker(folder, frames) -> bytes:
         async with vstick_sem:
             process, stdout, stderr = await enshell(cmd)
         if process.returncode != 0:
-            raise RuntimeError(f"stderr: {stderr} Return code: {process.returncode}")
+            raise RuntimeError(f"stderr: {stderr} Return code: {
+                    process.returncode}")
         webm = await read_binary(outfile)
         if not webm:
             raise RuntimeError(f"ffmpeg wrote an empty sticker; stderr: {stderr}")
@@ -436,6 +438,5 @@ async def _frames_to_tg_video_sticker(folder, frames) -> bytes:
         )
         bitrate *= TG_VIDEO_STICKER_MAX * 0.9 / len(webm)
         crf = min(crf + 5, 50)
-    raise RuntimeError(
-        f"Sticker still {len(webm)} bytes after " f"{TG_VIDEO_STICKER_ATTEMPTS} tries"
-    )
+    raise RuntimeError(f"Sticker still {
+            len(webm)} bytes after " f"{TG_VIDEO_STICKER_ATTEMPTS} tries")

@@ -64,7 +64,8 @@ class Event(BaseEvent):
                 self.view_once = v
                 return self._construct_media(self.view_once.message)
             if msg.name == "lottieStickerMessage":
-                # Lottie stickers come wrapped, for clients that can't show them.
+                # Lottie stickers come wrapped, for clients that can't show
+                # them.
                 self.short_name = "sticker"
                 self._media_message = v.message
                 return self._construct_media(v.message)

@@ -22,7 +22,6 @@ from neonize.proto.waE2E.WAWebProtobufsE2E_pb2 import (
     StickerMessage,
 )
 from neonize.utils.enum import MediaType
-
 from wand.image import Image as wand_image
 
 from bridge_bot.config import bot
