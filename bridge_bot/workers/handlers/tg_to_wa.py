@@ -12,6 +12,7 @@ from telethon.tl.types import (
 from bridge_bot import bot, conf, heavy_proc_lock, jid
 from bridge_bot.utils.bot_utils import get_sticker_pack, read_binary
 from bridge_bot.utils.log_utils import logger
+from bridge_bot.utils.lottie_utils import cached_was, send_was_sticker
 from bridge_bot.utils.media_utils import (
     all_vid_streams_avc,
     convert_to_avc,
@@ -419,19 +420,21 @@ async def sticker_to_wa(event):
             return
         _id = f"{event.chat.id}:{event.id}"
         # in_ = f"temp/{_id}_{event.file.name}"
-        sticker = await event.download_media(file=bytes)
         msg = wa_msg = None
         text = ""
         wa_chat_id = bridge_info.get("wa_chat")
         wa_jid = jid.build_jid(wa_chat_id, "g.us")
-        try:
-            stickerset = await get_sticker_pack(event)
-        except Exception as e:
-            await logger(e=e, warning=True)
-            stickerset = None
+        # A sticker bridged from a WA Lottie one goes back as the original.
+        if not (was := await cached_was(event.document.id)):
+            sticker = await event.download_media(file=bytes)
+            try:
+                stickerset = await get_sticker_pack(event)
+            except Exception as e:
+                await logger(e=e, warning=True)
+                stickerset = None
 
-        packname = stickerset.set.title if stickerset else "None"
-        sticker = await convert_to_wa_sticker(sticker, event.file.name, packname)
+            packname = stickerset.set.title if stickerset else "None"
+            sticker = await convert_to_wa_sticker(sticker, event.file.name, packname)
         # + replace_mentions_for_wa(text)
         text = get_bridge_header_wa(event)
         if event.reply_to:
@@ -442,9 +445,12 @@ async def sticker_to_wa(event):
             wa_msg = construct_message(
                 wa_chat_id, user_jid.User, msg.wa_id, None, "g.us", user_jid.Server, Msg
             )
-        rep = await bot.client.send_sticker(
-            wa_jid, sticker, quoted=wa_msg, passthrough=True
-        )
+        if was:
+            rep = await send_was_sticker(wa_jid, was, quoted=wa_msg)
+        else:
+            rep = await bot.client.send_sticker(
+                wa_jid, sticker, quoted=wa_msg, passthrough=True
+            )
         await save_message(
             wa_chat_id,
             chat_id,

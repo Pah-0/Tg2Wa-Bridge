@@ -6,6 +6,12 @@ from telethon.types import DocumentAttributeSticker, InputStickerSetEmpty
 
 from bridge_bot.config import bot
 from bridge_bot.utils.log_utils import logger
+from bridge_bot.utils.lottie_utils import (
+    cache_was,
+    is_lottie_sticker,
+    png_to_webp,
+    was_to_tg_sticker,
+)
 from bridge_bot.utils.media_utils import get_video_thumbnail, webp_to_tg_video_sticker
 from bridge_bot.utils.msg_store import (
     delete_message,
@@ -230,7 +236,23 @@ async def sticker_to_tg(event, tg_chat_id, client):
         sticker = await event.download()
         if not sticker:
             raise ValueError(f"Sticker {event.id} downloaded empty")
-        if event.sticker.isAnimated:
+        was = None
+        if is_lottie_sticker(event.sticker):
+            was = sticker
+            try:
+                sticker, ext = await was_to_tg_sticker(was)
+            except Exception as e:
+                # Telegram can't show a .was; send its still preview instead.
+                if not event.sticker.pngThumbnail:
+                    raise
+                await logger(
+                    e=f"@sticker_to_tg: Couldn't convert Lottie sticker {event.id}: {e}",
+                    warning=True,
+                )
+                sticker = await asyncio.to_thread(
+                    png_to_webp, event.sticker.pngThumbnail
+                )
+        elif event.sticker.isAnimated:
             try:
                 sticker = await webp_to_tg_video_sticker(sticker)
                 ext = "webm"
@@ -265,6 +287,9 @@ async def sticker_to_tg(event, tg_chat_id, client):
                 ],
                 reply_to=msg.tg_id,
             )
+        if was and rep.document:
+            # So it goes back to WA as the same Lottie sticker.
+            await cache_was(rep.document.id, was)
         await rep.reply(text, parse_mode=custom_parse)
         return await save_message(
             chat_id,

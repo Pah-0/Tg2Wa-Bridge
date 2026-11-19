@@ -41,6 +41,8 @@ class Event(BaseEvent):
         self.chat = Chat()
         self.user = User()
         self.alt_user = User()
+        # The message holding the media, when it's wrapped in another.
+        self._media_message = None
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -61,6 +63,11 @@ class Event(BaseEvent):
                 self.short_name = "viewOnce"
                 self.view_once = v
                 return self._construct_media(self.view_once.message)
+            if msg.name == "lottieStickerMessage":
+                # Lottie stickers come wrapped, for clients that can't show them.
+                self.short_name = "sticker"
+                self._media_message = v.message
+                return self._construct_media(v.message)
             if not msg.name.endswith("Message"):
                 continue
             s_name = msg.name.split("M")[0]
@@ -214,7 +221,7 @@ class Event(BaseEvent):
             self.audio or self.document or self.image or self.sticker or self.video
         ):
             raise Exception("Not a downloadable event!")
-        bytes_ = await download_media(self._message)
+        bytes_ = await download_media(self._media_message or self._message)
         if not path:
             return bytes_
         await write_binary(path, bytes_)
