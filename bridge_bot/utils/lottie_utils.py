@@ -33,7 +33,9 @@ from .os_utils import file_exists
 # Telegram's limits for animated (.tgs) stickers.
 TGS_MAX = 64 * 1024
 TGS_SIZE = 512
-TGS_MAX_SECONDS = 3
+# Telegram's docs say 3 seconds, but many WA Lottie stickers run up to 4,
+# and the video fallback looks worse.
+TGS_MAX_SECONDS = 4
 TGS_FPS = (30, 60)
 
 WAS_CACHE = "chat_dbs/was_stickers"
