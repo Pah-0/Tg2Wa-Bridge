@@ -125,6 +125,7 @@ async def convert_to_wa_sticker(sticker, file_name, packname, return_type=False)
                     max_sticker_size=712000,
                     is_webm=True,
                     enforce_full_duration=True,
+                    min_quality=20,
                 )
             buf = await add_sticker_exif(sticker, packname)
             return buf if not return_type else (buf, animated)
@@ -164,6 +165,7 @@ async def tgs_to_webp(sticker, packname):
                 max_sticker_size=712000,
                 is_webm=True,
                 enforce_full_duration=True,
+                min_quality=20,
             )
     s_remove(outfile)
     return await add_sticker_exif(sticker, packname)
