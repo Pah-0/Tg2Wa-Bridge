@@ -12,7 +12,7 @@ from bridge_bot.config import bot
 
 from .bot_utils import read_binary, write_binary
 from .log_utils import log, logger
-from .os_utils import enshell, file_exists, s_remove, size_of
+from .os_utils import enshell, file_exists, s_remove
 
 
 async def all_vid_streams_avc(file_path):
@@ -301,7 +301,7 @@ async def lottie_to_tg_video_sticker(animation: dict) -> bytes:
             process, stdout, stderr = await enshell(cmd)
         if process.returncode != 0:
             raise RuntimeError(f"stderr: {stderr} Return code: {
-                    process.returncode}")
+                process.returncode}")
         # Frame names aren't always zero-padded.
         pngs = sorted(
             (f for f in listdir(folder) if f.endswith(".png")),
@@ -369,7 +369,7 @@ async def _frames_to_tg_video_sticker(folder, frames) -> bytes:
             process, stdout, stderr = await enshell(cmd)
         if process.returncode != 0:
             raise RuntimeError(f"stderr: {stderr} Return code: {
-                    process.returncode}")
+                process.returncode}")
         webm = await read_binary(outfile)
         if not webm:
             raise RuntimeError(f"ffmpeg wrote an empty sticker; stderr: {stderr}")
@@ -382,4 +382,4 @@ async def _frames_to_tg_video_sticker(folder, frames) -> bytes:
         bitrate *= TG_VIDEO_STICKER_MAX * 0.9 / len(webm)
         crf = min(crf + 5, 50)
     raise RuntimeError(f"Sticker still {
-            len(webm)} bytes after " f"{TG_VIDEO_STICKER_ATTEMPTS} tries")
+        len(webm)} bytes after " f"{TG_VIDEO_STICKER_ATTEMPTS} tries")
