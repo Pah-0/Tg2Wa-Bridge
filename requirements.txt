@@ -11,7 +11,7 @@ sqlalchemy[asyncio]
 telethon
 tgcrypto
 Wand
-git+https://github.com/Nubuki-all/neonize@patch-1
+git+https://github.com/Pah-0/neonize@0.3.13.5-1
 #Might use later 
 apscheduler
 pytz

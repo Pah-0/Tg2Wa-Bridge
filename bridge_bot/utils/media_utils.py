@@ -124,17 +124,8 @@ async def convert_to_wa_sticker(sticker, file_name, packname, return_type=False)
                     animated_gif=True,
                     max_sticker_size=712000,
                     is_webm=True,
+                    enforce_full_duration=True,
                 )
-                if len(sticker) > 1000000:
-                    log(
-                        e="@webm_to_webp: Sticker larger than limit, trying another method to reduce size"
-                    )
-                    sticker = await ffmpeg.cv_to_webp(
-                        enforce_not_broken=True,
-                        animated_gif=False,
-                        max_sticker_size=712000,
-                        is_webm=True,
-                    )
             buf = await add_sticker_exif(sticker, packname)
             return buf if not return_type else (buf, animated)
     if file_name.endswith("tgs"):
@@ -172,58 +163,10 @@ async def tgs_to_webp(sticker, packname):
                 animated_gif=True,
                 max_sticker_size=712000,
                 is_webm=True,
+                enforce_full_duration=True,
             )
     s_remove(outfile)
-    if len(sticker) > 1000000:
-        return await _tgs_to_webp(sticker, packname)
     return await add_sticker_exif(sticker, packname)
-
-
-async def _tgs_to_webp(sticker, packname):
-    base = f"temp/{uuid.uuid4()}"
-    file = base + ".tgs"
-    outfile = base + ".webp"
-    await write_binary(file, sticker)
-    cmd = [
-        "bin/lottie_to_webp.sh",
-        file,
-        "--output",
-        outfile,
-        "--quality",
-        "xx",
-        "--fps",
-        "xx",
-    ]
-    fps = 24
-    i = 1
-    quality = 50
-    while True:
-        cmd[5] = f"{quality}"
-        cmd[7] = f"{fps}"
-        log(e=f"Attempt #{i}, quality={quality}%, fps={fps}")
-        async with astick_sem:
-            process, stdout, stderr = await enshell(cmd)
-        if process.returncode != 0:
-            raise RuntimeError(
-                # type: ignore
-                f"stderr: {stderr} Return code: {process.returncode}"
-            )
-        fps -= 2
-        i += 1
-        quality -= 10
-        s_size = size_of(outfile)
-        if not (quality or s_size < 1000000):
-            await logger(
-                e="Could not ensure sticker size falls between Whatsapp limits."
-            )
-            break
-        if s_size < 1000000:
-            break
-        s_remove(outfile)
-    s_remove(file)
-    sticker = await add_sticker_exif(outfile, packname)
-    s_remove(outfile)
-    return sticker
 
 
 async def add_sticker_exif(sticker: str | bytes, packname="Test!"):
